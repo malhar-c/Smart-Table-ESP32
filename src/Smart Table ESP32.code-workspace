@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"name": "Smart Table ESP32",
+			"path": ".."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"numeric": "cpp",
+			"new": "cpp",
+			"climits": "cpp",
+			"*.xbm": "cpp"
+		}
+	}
+}
