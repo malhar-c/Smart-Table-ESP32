@@ -4,9 +4,9 @@
 // #define dir_pin 27
 // #define sleep_pin 26
 
-#define dirPinStepper 27
-#define enablePinStepper 26
-#define stepPinStepper 25
+#define dirPinStepper 4
+#define enablePinStepper 15
+#define stepPinStepper 2
 
 //standing desk crank, stepper steps and gear ratio calculations
 #define turns_max_height 29  //this is the max number of turns with which the table can raise to max height
@@ -33,12 +33,12 @@ void setup_stepper_init()
         // stepper->setDelayToDisable(1000);
 
         //full step config
-        // stepper->setSpeedInUs(1000);  // the parameter is us/step !!! 1000 in full step works fine
-        // stepper->setAcceleration(600);
+        stepper->setSpeedInUs(1000);  // the parameter is us/step !!! 1000 in full step works fine
+        stepper->setAcceleration(600);
         
         //half step config
-        stepper->setSpeedInUs(500);  // the parameter is us/step !!! 1000 in full step works fine
-        stepper->setAcceleration(1000);
+        // stepper->setSpeedInUs(500);  // the parameter is us/step !!! 1000 in full step works fine
+        // stepper->setAcceleration(1000);
 
 
         // stepper->move(3800); //for test wheather stepper is moving or no
