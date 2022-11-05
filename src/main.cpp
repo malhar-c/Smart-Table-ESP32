@@ -41,7 +41,7 @@
 #include "PIR_motion_sensor.h"
 #include "Standing_Desk.h"
 
-#define RGB_data_pin 26
+#define RGB_data_pin 13
 
 void setup()
 {
@@ -52,6 +52,7 @@ void setup()
 
   //call all the sub files setup() here
   LED_setup();
+  setup_stepper_init();
 
   homeSpan.begin(Category::Bridges, "Smart Desk");
 

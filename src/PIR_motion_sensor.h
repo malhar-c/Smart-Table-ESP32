@@ -1,4 +1,4 @@
-#define PIR_ip 25
+#define PIR_ip 12
 
 struct PIR_motion_sensor : Service::MotionSensor {      // Addressable single-wire RGB LED Strand (e.g. NeoPixel)
 
