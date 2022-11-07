@@ -12,7 +12,7 @@
 #define turns_max_height 29  //this is the max number of turns with which the table can raise to max height
 #define turns_to_stand 24  //this is the number of turns where optimal stand position height is reached
 #define stepper_gear_ratio 19 //1:19 gear ratio
-#define motor_steps_full 200  //200 steps per revolution if drove at full step
+#define motor_steps_full 400  //200 steps per revolution if drove at full step
 #define stepper_max_steps motor_steps_full*stepper_gear_ratio*turns_max_height
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
@@ -33,15 +33,24 @@ void setup_stepper_init()
         // stepper->setDelayToDisable(1000);
 
         //full step config
-        stepper->setSpeedInUs(1000);  // the parameter is us/step !!! 1000 in full step works fine
-        stepper->setAcceleration(600);
+        // stepper->setSpeedInUs(1000);  // the parameter is us/step !!! 1000 in full step works fine
+        // stepper->setAcceleration(1000);
         
         //half step config
-        // stepper->setSpeedInUs(500);  // the parameter is us/step !!! 1000 in full step works fine
+        stepper->setSpeedInUs(600);  // the parameter is us/step !!! 1000 in full step works fine
+        stepper->setAcceleration(1200);
+
+        //quarter step config
+        // stepper->setSpeedInUs(250);  // the parameter is us/step !!! 1000 in full step works fine
         // stepper->setAcceleration(1000);
 
+        //TMC2208 driver config (after switching to TMC2208 the speed reduced even at full step)
+        // stepper->setSpeedInUs(1000);  // the parameter is us/step !!! 1000 in full step works fine
+        // stepper->setAcceleration(1000);
 
-        // stepper->move(3800); //for test wheather stepper is moving or no
+        //move 1 revolution for testing wheather stepper is moving or not
+        // stepper->move(motor_steps_full);  
+        stepper->move(19*motor_steps_full); //for geared motor
     }
     // Serial.println("running at the startup code");
 }
