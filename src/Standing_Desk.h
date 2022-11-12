@@ -1,8 +1,5 @@
 #include "FastAccelStepper.h"
 
-// #define step_pin 25
-// #define dir_pin 27
-// #define sleep_pin 26
 
 #define dirPinStepper 4
 #define enablePinStepper 15
@@ -11,15 +8,19 @@
 //standing desk crank, stepper steps and gear ratio calculations
 #define turns_max_height 29  //this is the max number of turns with which the table can raise to max height
 #define turns_to_stand 24  //this is the number of turns where optimal stand position height is reached
-#define stepper_gear_ratio 19 //1:19 gear ratio
+#define stepper_gear_ratio 19.2 //1:19 gear ratio but its more like 19.2
 #define motor_steps_full 400  //200 steps per revolution if drove at full step
 #define stepper_max_steps motor_steps_full*stepper_gear_ratio*turns_max_height
+
+//Vibration sensor (to detect Stepper vibration, missing steps, overload, etc)
+#define vibration_sensor 26
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *stepper = NULL;
 
 void setup_stepper_init()
 {
+    pinMode(vibration_sensor, INPUT);
     engine.init();
     stepper = engine.stepperConnectToPin(stepPinStepper);
     if (stepper) 
@@ -37,7 +38,8 @@ void setup_stepper_init()
         // stepper->setAcceleration(1000);
         
         //half step config
-        stepper->setSpeedInUs(600);  // the parameter is us/step !!! 1000 in full step works fine
+        // stepper->setSpeedInUs(600);  // the parameter is us/step !!! 1000 in full step works fine
+        stepper->setSpeedInHz(1600);
         stepper->setAcceleration(1200);
 
         //quarter step config
@@ -50,7 +52,7 @@ void setup_stepper_init()
 
         //move 1 revolution for testing wheather stepper is moving or not
         // stepper->move(motor_steps_full);  
-        stepper->move(19*motor_steps_full); //for geared motor
+        // stepper->move(stepper_gear_ratio*motor_steps_full); //for geared motor
     }
     // Serial.println("running at the startup code");
 }
@@ -94,6 +96,7 @@ struct Standing_Desk : Service::WindowCovering{
 
     boolean update()
     {
+        obstacleDetected->setVal(0);
         table_target_pos= targetPosition->getNewVal();
         stepper_steps_target = map(table_target_pos, 0, 100, 0, stepper_max_steps);
 
@@ -107,7 +110,16 @@ struct Standing_Desk : Service::WindowCovering{
         // stepper.moveTo(stepper_steps_target);
         // stepper.run();
         stepper_steps_current = stepper->getCurrentPosition();
-        table_current_pos = map(stepper_steps_current, 0, stepper_max_steps, 0, 100);
+        table_current_pos = map(stepper_steps_current, 0, stepper_max_steps, 0, 100); //will store 0-100 value
+
+        Serial.println(digitalRead(vibration_sensor));
+
+        if(digitalRead(vibration_sensor) == 1){
+            //stepper is having issues / missing steps, jittering, etc
+            stepper->forceStop();
+            obstacleDetected->setVal(1);
+            targetPosition->setVal(table_current_pos); //update the position visually in Home App
+        }
         
         if(currentPosition->getNewVal() == targetPosition->getNewVal()){
             //turn off the stepper engine save some power
@@ -116,6 +128,7 @@ struct Standing_Desk : Service::WindowCovering{
 
         // delay(1000); //intentional blocking the loop to see the efect
 
+        //update the Homekit current position every 0.5 sec
         if(currentPosition->timeVal()>500)
         {
             currentPosition->setVal(table_current_pos);
