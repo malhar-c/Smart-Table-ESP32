@@ -13,14 +13,32 @@
 #define stepper_max_steps motor_steps_full*stepper_gear_ratio*turns_max_height
 
 //Vibration sensor (to detect Stepper vibration, missing steps, overload, etc)
+//NOTE: have to implement inturrpts for this one
 #define vibration_sensor 26
+
+//manual push buttons config
+#define up_Button    27
+#define down_Button  25
+#define sit_Button   33 //Homeing button
+#define stand_Button 32
+
+//reed swtich limit end stop exp
+//blabla bla
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *stepper = NULL;
 
 void setup_stepper_init()
 {
+    //vibration sensor
     pinMode(vibration_sensor, INPUT);
+
+    //push buttons
+    pinMode(up_Button, INPUT_PULLUP);
+    pinMode(down_Button, INPUT_PULLUP);
+    pinMode(sit_Button, INPUT_PULLUP);
+    pinMode(stand_Button, INPUT_PULLUP);
+
     engine.init();
     stepper = engine.stepperConnectToPin(stepPinStepper);
     if (stepper) 
@@ -41,6 +59,11 @@ void setup_stepper_init()
         // stepper->setSpeedInUs(600);  // the parameter is us/step !!! 1000 in full step works fine
         stepper->setSpeedInHz(1600);
         stepper->setAcceleration(1200);
+
+        //after stepper installation to desk config... wlill go from super slow to reduce problems
+        //probably speed cannot be more than 1000 Hz
+        // stepper->setSpeedInHz(1000);
+        // stepper->setAcceleration(100);
 
         //quarter step config
         // stepper->setSpeedInUs(250);  // the parameter is us/step !!! 1000 in full step works fine
@@ -63,6 +86,13 @@ int table_current_pos;
 int table_target_pos;
 int initial_steps_from_NVS;
 // int stepper_max_steps = motor_steps_full*stepper_gear_ratio*turns_max_height;
+
+// for button debounce and filtering
+bool previousState = 1;
+bool currentState = 1;
+
+//prototypes
+bool buttonPressed(int);
 
 struct Standing_Desk : Service::WindowCovering{
 
@@ -112,17 +142,36 @@ struct Standing_Desk : Service::WindowCovering{
         stepper_steps_current = stepper->getCurrentPosition();
         table_current_pos = map(stepper_steps_current, 0, stepper_max_steps, 0, 100); //will store 0-100 value
 
-        Serial.println(digitalRead(vibration_sensor));
+        // Serial.println(digitalRead(vibration_sensor));
 
+        if(buttonPressed(up_Button)) //when up button is pressed
+        {
+            //increase the table target position by 1%
+            if(targetPosition->getNewVal() != 100){
+                targetPosition->setVal(((targetPosition->getNewVal()+ 5) / 5) * 5); //increament of 5
+                // ((targetPosition->getNewVal()+ 5 + 4) / 5) * 5
+            }
+            update();
+        }
+
+        //debugggin
+        Serial.print("Target Position: ");
+        Serial.print(targetPosition->getNewVal());
+        Serial.print(" current position: ");
+        Serial.print(currentPosition->getNewVal());
+        Serial.print(" State: ");
+        Serial.println(positionState->getNewVal());
+
+
+        //stepper is having issues / missing steps, jittering, etc, stop the motor immediately 
         if(digitalRead(vibration_sensor) == 1){
-            //stepper is having issues / missing steps, jittering, etc
             stepper->forceStop();
             obstacleDetected->setVal(1);
             targetPosition->setVal(table_current_pos); //update the position visually in Home App
         }
         
         if(currentPosition->getNewVal() == targetPosition->getNewVal()){
-            //turn off the stepper engine save some power
+            //turn off the stepper engine save some power, probably not needed
             // stepper->stopMove(); //doesn't work
         }
 
@@ -139,5 +188,22 @@ struct Standing_Desk : Service::WindowCovering{
             // Serial.print(" State: ");
             // Serial.println(positionState->getNewVal());
         }
+    }
+
+    bool buttonPressed(int button)
+    {
+        bool res_state = 0;
+
+        previousState = currentState;
+        currentState = digitalRead(button);
+
+        if(previousState == 0 && currentState == 1)
+        {
+            //button is pressed
+            delay(100);
+            res_state = 1;
+        }
+
+        return(res_state);
     }
 };
