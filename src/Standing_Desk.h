@@ -12,18 +12,27 @@
 #define motor_steps_full 400  //200 steps per revolution if drove at full step
 #define stepper_max_steps motor_steps_full*stepper_gear_ratio*turns_max_height
 
+// --- SAFETY SECTION ---
+
 //Vibration sensor (to detect Stepper vibration, missing steps, overload, etc)
 //NOTE: have to implement inturrpts for this one
 #define vibration_sensor 26
+//homing sensor (reed switch) this will stop the motor instantly and set the lower limit
+#define homing_Sensor  23
 
 //manual push buttons config
-#define up_Button    27
-#define down_Button  25
-#define sit_Button   33 //Homeing button
-#define stand_Button 32
+#define up_Button     27
+#define down_Button   25
+#define sit_Button    33
+#define stand_Button  32
 
-//reed swtich limit end stop exp
-//blabla bla
+#define manual_push_btn_count 4
+
+#define index_up_Button     0
+#define index_down_Button   1
+#define index_sit_Button    2
+#define index_stand_Button  3
+
 
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *stepper = NULL;
@@ -32,6 +41,9 @@ void setup_stepper_init()
 {
     //vibration sensor
     pinMode(vibration_sensor, INPUT);
+
+    //homing sensor (reed switch)
+    pinMode(homing_Sensor, INPUT_PULLUP);
 
     //push buttons
     pinMode(up_Button, INPUT_PULLUP);
@@ -57,13 +69,29 @@ void setup_stepper_init()
         
         //half step config
         // stepper->setSpeedInUs(600);  // the parameter is us/step !!! 1000 in full step works fine
-        stepper->setSpeedInHz(1600);
-        stepper->setAcceleration(1200);
+        // stepper->setSpeedInHz(1600);
+        // stepper->setAcceleration(1200);
 
         //after stepper installation to desk config... wlill go from super slow to reduce problems
         //probably speed cannot be more than 1000 Hz
-        // stepper->setSpeedInHz(1000);
-        // stepper->setAcceleration(100);
+
+        //note: while going up Speed cannot be more than 600Hz @12V (and the driver gets uncomfortably hot)
+        // when going down speed can be max 1000Hz at 12V
+        // stepper->setSpeedInHz(600);
+        // stepper->setAcceleration(1200);
+
+        // Switch to 16V - max speed while going up = 1575 Hz (and driver not heating up as much)
+        // stepper->setSpeedInHz(1575);
+        // stepper->setAcceleration(1000);
+
+        //16V --- a4988 - for sound comparison
+        //1/2 step
+        stepper->setSpeedInHz(1575);
+        stepper->setAcceleration(1000);
+
+        // // Switch to 32V - max speed while going up = 2000Hz (but driver heating up)
+        // stepper->setSpeedInHz(2000);
+        // stepper->setAcceleration(1200);
 
         //quarter step config
         // stepper->setSpeedInUs(250);  // the parameter is us/step !!! 1000 in full step works fine
@@ -88,11 +116,11 @@ int initial_steps_from_NVS;
 // int stepper_max_steps = motor_steps_full*stepper_gear_ratio*turns_max_height;
 
 // for button debounce and filtering
-bool previousState = 1;
-bool currentState = 1;
+bool previousState[manual_push_btn_count];
+bool currentState[manual_push_btn_count];
 
 //prototypes
-bool buttonPressed(int);
+bool buttonPressed(int, short);
 
 struct Standing_Desk : Service::WindowCovering{
 
@@ -144,11 +172,35 @@ struct Standing_Desk : Service::WindowCovering{
 
         // Serial.println(digitalRead(vibration_sensor));
 
-        if(buttonPressed(up_Button)) //when up button is pressed
+        if(buttonPressed(up_Button, index_up_Button)) //when up button is pressed
         {
-            //increase the table target position by 1%
+            //increase the table target position by 5%
             if(targetPosition->getNewVal() != 100){
                 targetPosition->setVal(((targetPosition->getNewVal()+ 5) / 5) * 5); //increament of 5
+                // ((targetPosition->getNewVal()+ 5 + 4) / 5) * 5
+            }
+
+            // //decrease the table target position by 1%
+            // if(targetPosition->getNewVal() != 0){
+            //     // targetPosition->setVal(((targetPosition->getNewVal()+ 5) / 5) * 5); //increament of 5
+            //     targetPosition->setVal(targetPosition->getNewVal()-1); //increament of 5
+            //     // ((targetPosition->getNewVal()+ 5 + 4) / 5) * 5
+            // }
+
+            //increase the table target position by 1%
+            // if(targetPosition->getNewVal() != 100){
+            //     // targetPosition->setVal(((targetPosition->getNewVal()+ 5) / 5) * 5); //increament of 5
+            //     targetPosition->setVal(targetPosition->getNewVal()+1); //increament of 5
+            //     // ((targetPosition->getNewVal()+ 5 + 4) / 5) * 5
+            // }
+            update();
+        }
+
+        if(buttonPressed(down_Button, index_down_Button)) //when down button is pressed
+        {
+            //increase the table target position by 5%
+            if(targetPosition->getNewVal() != 0){
+                targetPosition->setVal(((targetPosition->getNewVal()- 1) / 5) * 5); //increament of 5
                 // ((targetPosition->getNewVal()+ 5 + 4) / 5) * 5
             }
             update();
@@ -161,6 +213,8 @@ struct Standing_Desk : Service::WindowCovering{
         Serial.print(currentPosition->getNewVal());
         Serial.print(" State: ");
         Serial.println(positionState->getNewVal());
+        
+
 
 
         //stepper is having issues / missing steps, jittering, etc, stop the motor immediately 
@@ -190,14 +244,14 @@ struct Standing_Desk : Service::WindowCovering{
         }
     }
 
-    bool buttonPressed(int button)
+    bool buttonPressed(int button, short index)
     {
         bool res_state = 0;
-
-        previousState = currentState;
-        currentState = digitalRead(button);
-
-        if(previousState == 0 && currentState == 1)
+        
+        previousState[index] = currentState[index];
+        currentState[index] = digitalRead(button);
+        
+        if(previousState[index] == 0 && currentState[index] == 1)
         {
             //button is pressed
             delay(100);
