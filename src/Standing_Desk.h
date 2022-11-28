@@ -20,6 +20,10 @@
 //homing sensor (reed switch) this will stop the motor instantly and set the lower limit
 #define homing_Sensor  23
 
+//interrupt debounce (though this shoul dnot be necessary)
+#define DBOUNCE 100
+
+
 //manual push buttons config
 #define up_Button     27
 #define down_Button   25
@@ -106,6 +110,48 @@ void setup_stepper_init()
         // stepper->move(stepper_gear_ratio*motor_steps_full); //for geared motor
     }
     // Serial.println("running at the startup code");
+}
+
+// interrupt definition, functions and setups
+// bool homing_flag = 0;
+bool step_skip_flag = 0;
+
+bool intr_test = 0;
+
+volatile byte home_state = LOW; //ISR flag, triggers code in main loop
+volatile unsigned long difference;
+
+void IRAM_ATTR DESK_HOME()
+{
+    intr_test = !intr_test;
+    // static unsigned long last_interrupt = 0;
+    if(!digitalRead(homing_Sensor) && digitalRead(stepper->getDirectionPin()) == 0)
+    {
+        // stepper->forceStop(); //aparently this doesn't work here :)
+        digitalWrite(enablePinStepper, HIGH); //manully pulling the enable pin high to immedately stop motor
+        home_state = HIGH;
+        // difference = millis()-last_interrupt;
+    }
+    // last_interrupt = millis(); //note the last time the ISR was called
+
+    // if(!digitalRead(homing_Sensor))
+    // {
+    //     Serial.println("HOMing SENSOR is Active");
+    //     homing_flag = 1;
+    //     stepper->forceStop();
+    // }
+}
+
+void IRAM_ATTR STEP_SKIPS()
+{
+    step_skip_flag = 1;
+    digitalWrite(enablePinStepper, HIGH);
+}
+
+void intrpt_setup()
+{
+    attachInterrupt(digitalPinToInterrupt(homing_Sensor), DESK_HOME, FALLING);
+    // attachInterrupt(vibration_sensor, STEP_SKIPS, RISING);
 }
 
 long stepper_steps_target;
@@ -211,10 +257,16 @@ struct Standing_Desk : Service::WindowCovering{
         Serial.print(targetPosition->getNewVal());
         Serial.print(" current position: ");
         Serial.print(currentPosition->getNewVal());
-        Serial.print(" State: ");
-        Serial.println(positionState->getNewVal());
-        
-
+        // Serial.print(" State: ");
+        // Serial.print(positionState->getNewVal());
+        // Serial.print(" Direction pin output: ");
+        // Serial.print(digitalRead(stepper->getDirectionPin()));
+        // Serial.print(" enablePIN state: ");
+        // Serial.print(digitalRead(enablePinStepper));
+        Serial.print("  Intrpt Triggered ? : ");
+        Serial.print(intr_test);
+        Serial.print(" | Homing Sensor: ");
+        Serial.println(digitalRead(homing_Sensor));
 
 
         //stepper is having issues / missing steps, jittering, etc, stop the motor immediately 
@@ -223,10 +275,29 @@ struct Standing_Desk : Service::WindowCovering{
             obstacleDetected->setVal(1);
             targetPosition->setVal(table_current_pos); //update the position visually in Home App
         }
-        
-        if(currentPosition->getNewVal() == targetPosition->getNewVal()){
-            //turn off the stepper engine save some power, probably not needed
-            // stepper->stopMove(); //doesn't work
+
+        //homing sensor trigger
+        if(home_state == 1)
+        {
+            Serial.println(" HOMING SENSOR TRIGGERED !!!!!saved from a crash you moron!!!!!!");
+            // Serial.print(" HOME STATE Varible (interrupt): ");
+            // Serial.println(home_state);
+            //homeing triggred... i.e. table is at minimum height
+            stepper->forceStop(); //need this for the reverse action to work
+            delay(500);
+            // do{
+            //     stepper->move(1);
+            // }while(!digitalRead(homing_Sensor));
+            stepper->move(motor_steps_full);
+            // Serial.println(stepper->getEnablePinHighActive);
+            delay(1000);
+            stepper->forceStop();
+            currentPosition->setVal(0);
+            targetPosition->setVal(0);
+            stepper->setCurrentPosition(0);
+            home_state = LOW;
+            
+            delay(10000); //10sec delay to debug
         }
 
         // delay(1000); //intentional blocking the loop to see the efect
@@ -244,20 +315,21 @@ struct Standing_Desk : Service::WindowCovering{
         }
     }
 
-    bool buttonPressed(int button, short index)
-    {
-        bool res_state = 0;
-        
-        previousState[index] = currentState[index];
-        currentState[index] = digitalRead(button);
-        
-        if(previousState[index] == 0 && currentState[index] == 1)
-        {
-            //button is pressed
-            delay(100);
-            res_state = 1;
-        }
-
-        return(res_state);
-    }
 };
+
+bool buttonPressed(int button, short index)
+{
+    bool res_state = 0;
+        
+    previousState[index] = currentState[index];
+    currentState[index] = digitalRead(button);
+        
+    if(previousState[index] == 0 && currentState[index] == 1)
+    {
+        //button is pressed
+        delay(100);
+        res_state = 1;
+    }
+
+    return(res_state);
+}

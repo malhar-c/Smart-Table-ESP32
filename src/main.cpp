@@ -53,6 +53,7 @@ void setup()
   //call all the sub files setup() here
   LED_setup();
   setup_stepper_init();
+  intrpt_setup();
 
   homeSpan.begin(Category::Bridges, "Smart Desk");
 
