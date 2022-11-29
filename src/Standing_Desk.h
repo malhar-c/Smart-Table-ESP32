@@ -23,6 +23,9 @@
 //interrupt debounce (though this shoul dnot be necessary)
 #define DBOUNCE 100
 
+//vibration sensor sensitivity ---> higher vlaue = lower sens
+#define obstacle_detection_sensitivity 10
+
 
 //manual push buttons config
 #define up_Button     27
@@ -85,13 +88,13 @@ void setup_stepper_init()
         // stepper->setAcceleration(1200);
 
         // Switch to 16V - max speed while going up = 1575 Hz (and driver not heating up as much)
-        // stepper->setSpeedInHz(1575);
-        // stepper->setAcceleration(1000);
+        stepper->setSpeedInHz(1575);
+        stepper->setAcceleration(1000);
 
         //16V --- a4988 - for sound comparison
         //1/2 step
-        stepper->setSpeedInHz(1575);
-        stepper->setAcceleration(1000);
+        // stepper->setSpeedInHz(1575);
+        // stepper->setAcceleration(1000);
 
         // // Switch to 32V - max speed while going up = 2000Hz (but driver heating up)
         // stepper->setSpeedInHz(2000);
@@ -113,45 +116,42 @@ void setup_stepper_init()
 }
 
 // interrupt definition, functions and setups
-// bool homing_flag = 0;
-bool step_skip_flag = 0;
 
 bool intr_test = 0;
 
 volatile byte home_state = LOW; //ISR flag, triggers code in main loop
+//ISR variable for vibration sensor everytime vibration is detected this will be incremented by 1
+volatile short obstacle_detection = 0;
+
+//For push buttons
+// volatile byte up_btn = LOW;
+
 volatile unsigned long difference;
 
 void IRAM_ATTR DESK_HOME()
 {
     intr_test = !intr_test;
-    // static unsigned long last_interrupt = 0;
-    if(!digitalRead(homing_Sensor) && digitalRead(stepper->getDirectionPin()) == 0)
+    //check if the homing sensor is still active, steper is active and table travelling down
+    if(!digitalRead(homing_Sensor) && !digitalRead(stepper->getDirectionPin()) && !digitalRead(enablePinStepper))
     {
         // stepper->forceStop(); //aparently this doesn't work here :)
         digitalWrite(enablePinStepper, HIGH); //manully pulling the enable pin high to immedately stop motor
         home_state = HIGH;
-        // difference = millis()-last_interrupt;
     }
-    // last_interrupt = millis(); //note the last time the ISR was called
-
-    // if(!digitalRead(homing_Sensor))
-    // {
-    //     Serial.println("HOMing SENSOR is Active");
-    //     homing_flag = 1;
-    //     stepper->forceStop();
-    // }
 }
 
 void IRAM_ATTR STEP_SKIPS()
 {
-    step_skip_flag = 1;
-    digitalWrite(enablePinStepper, HIGH);
+    obstacle_detection++;
+    if(obstacle_detection > obstacle_detection_sensitivity){
+        digitalWrite(enablePinStepper, HIGH); //manually stop the motor
+    }
 }
 
 void intrpt_setup()
 {
     attachInterrupt(digitalPinToInterrupt(homing_Sensor), DESK_HOME, FALLING);
-    // attachInterrupt(vibration_sensor, STEP_SKIPS, RISING);
+    attachInterrupt(vibration_sensor, STEP_SKIPS, RISING);
 }
 
 long stepper_steps_target;
@@ -263,17 +263,30 @@ struct Standing_Desk : Service::WindowCovering{
         // Serial.print(digitalRead(stepper->getDirectionPin()));
         // Serial.print(" enablePIN state: ");
         // Serial.print(digitalRead(enablePinStepper));
-        Serial.print("  Intrpt Triggered ? : ");
-        Serial.print(intr_test);
+        // Serial.print("  Intrpt Triggered ? : ");
+        // Serial.print(intr_test);
+        Serial.print(" vibration detected count: ");
+        Serial.print(obstacle_detection);
         Serial.print(" | Homing Sensor: ");
         Serial.println(digitalRead(homing_Sensor));
 
 
         //stepper is having issues / missing steps, jittering, etc, stop the motor immediately 
-        if(digitalRead(vibration_sensor) == 1){
+        // if(digitalRead(vibration_sensor) == 1){
+        //     stepper->forceStop();
+        //     obstacleDetected->setVal(1);
+        //     targetPosition->setVal(table_current_pos); //update the position visually in Home App
+        // }
+        if(obstacle_detection > obstacle_detection_sensitivity)
+        {
+            Serial.println("OBSTACLE (VIBRATION IN TABLE) DETECTED!!!!!!");
+            Serial.print("Vibration sensor op: ");
+            Serial.println(digitalRead(vibration_sensor));
             stepper->forceStop();
             obstacleDetected->setVal(1);
             targetPosition->setVal(table_current_pos); //update the position visually in Home App
+            obstacle_detection = 0;
+            delay(1000); //10sec delay for debugging 
         }
 
         //homing sensor trigger
