@@ -125,6 +125,9 @@ volatile short obstacle_detection = 0;
 
 //For push buttons
 // volatile byte up_btn = LOW;
+// volatile byte down_btn = LOW;
+// volatile byte sit_btn = LOW;
+// volatile byte stand_btn = LOW;
 
 volatile unsigned long difference;
 
@@ -148,10 +151,24 @@ void IRAM_ATTR STEP_SKIPS()
     }
 }
 
+// void IRAM_ATTR ISR_up()
+// {
+//     up_btn = !up_btn;
+// }
+
+// void IRAM_ATTR ISR_down()
+// {
+//     down_btn = !down_btn;
+// }
+
 void intrpt_setup()
 {
     attachInterrupt(digitalPinToInterrupt(homing_Sensor), DESK_HOME, FALLING);
     attachInterrupt(vibration_sensor, STEP_SKIPS, RISING);
+    // attachInterrupt(digitalPinToInterrupt(up_Button), ISR_up, RISING);
+    // attachInterrupt(digitalPinToInterrupt(down_Button), ISR_down, RISING);
+    // attachInterrupt(digitalPinToInterrupt(sit_Button), ISR_sit, FALLING);
+    // attachInterrupt(digitalPinToInterrupt(stand_Button), ISR_stand, FALLING);
 }
 
 long stepper_steps_target;
@@ -267,6 +284,9 @@ struct Standing_Desk : Service::WindowCovering{
         // Serial.print(intr_test);
         Serial.print(" vibration detected count: ");
         Serial.print(obstacle_detection);
+        // Serial.print(" Button States - ");
+        // Serial.print(up_btn);
+        // Serial.print(down_btn);
         Serial.print(" | Homing Sensor: ");
         Serial.println(digitalRead(homing_Sensor));
 
