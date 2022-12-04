@@ -88,8 +88,14 @@ void setup_stepper_init()
         // stepper->setAcceleration(1200);
 
         // Switch to 16V - max speed while going up = 1575 Hz (and driver not heating up as much)
-        stepper->setSpeedInHz(1575);
-        stepper->setAcceleration(1000);
+
+        //1/2 stepping
+        // stepper->setSpeedInHz(1575);
+        // stepper->setAcceleration(1000);
+
+        //1/4 stepping
+        // stepper->setSpeedInHz(1575*2);
+        // stepper->setAcceleration(1000*2);
 
         //16V --- a4988 - for sound comparison
         //1/2 step
@@ -97,12 +103,13 @@ void setup_stepper_init()
         // stepper->setAcceleration(1000);
 
         // // Switch to 32V - max speed while going up = 2000Hz (but driver heating up)
-        // stepper->setSpeedInHz(2000);
-        // stepper->setAcceleration(1200);
+        //1/2 stepping
+        stepper->setSpeedInHz(1600);
+        stepper->setAcceleration(1200);
 
-        //quarter step config
-        // stepper->setSpeedInUs(250);  // the parameter is us/step !!! 1000 in full step works fine
-        // stepper->setAcceleration(1000);
+        //1/4 stepping
+        // stepper->setSpeedInHz(4000);
+        // stepper->setAcceleration(2400);
 
         //TMC2208 driver config (after switching to TMC2208 the speed reduced even at full step)
         // stepper->setSpeedInUs(1000);  // the parameter is us/step !!! 1000 in full step works fine
@@ -122,6 +129,8 @@ bool intr_test = 0;
 volatile byte home_state = LOW; //ISR flag, triggers code in main loop
 //ISR variable for vibration sensor everytime vibration is detected this will be incremented by 1
 volatile short obstacle_detection = 0;
+
+volatile byte obstacle_avoidance_triggered = LOW;
 
 //For push buttons
 // volatile byte up_btn = LOW;
@@ -145,10 +154,14 @@ void IRAM_ATTR DESK_HOME()
 
 void IRAM_ATTR STEP_SKIPS()
 {
-    obstacle_detection++;
-    if(obstacle_detection > obstacle_detection_sensitivity){
-        digitalWrite(enablePinStepper, HIGH); //manually stop the motor
-    }
+    //if stepper is active, increase the variable and stop the motor if exceeds max allowed vibrations
+    if(!digitalRead(enablePinStepper)){
+        obstacle_detection++;
+        if(obstacle_detection > obstacle_detection_sensitivity){
+            obstacle_avoidance_triggered = HIGH;
+            digitalWrite(enablePinStepper, HIGH); //manually stop the motor
+        }
+    }  
 }
 
 // void IRAM_ATTR ISR_up()
@@ -171,6 +184,8 @@ void intrpt_setup()
     // attachInterrupt(digitalPinToInterrupt(stand_Button), ISR_stand, FALLING);
 }
 
+bool previous_direction = 0;
+
 long stepper_steps_target;
 long stepper_steps_current;
 int table_current_pos;
@@ -182,8 +197,9 @@ int initial_steps_from_NVS;
 bool previousState[manual_push_btn_count];
 bool currentState[manual_push_btn_count];
 
-//prototypes
+//function prototypes
 bool buttonPressed(int, short);
+bool direction_sign(signed long);
 
 struct Standing_Desk : Service::WindowCovering{
 
@@ -221,6 +237,47 @@ struct Standing_Desk : Service::WindowCovering{
         table_target_pos= targetPosition->getNewVal();
         stepper_steps_target = map(table_target_pos, 0, 100, 0, stepper_max_steps);
 
+        // stepper->moveTo(stepper_steps_target);
+        // delay(10);
+        // stepper->forceStop();
+
+        // if target position is greater than current potision +
+        // if target pos is < current -
+        // if((targetPosition->getNewVal() - currentPosition->getNewVal()) > 0)
+
+
+        // previous travelling direction is not = current, 
+        // travel some steps in current direction to couteract the slacking
+        if(direction_sign(targetPosition->getNewVal() - currentPosition->getNewVal()) != previous_direction)
+        {
+            //doo some epic shit
+            //stop the motor (deccelerate)
+            stepper->stopMove();
+            // delay(2000);
+            while(stepper->isRunning()){
+                //do nothing
+                //just block the time when stepper is deccelarating
+            }
+            //increase the accel and speed
+            stepper->setSpeedInHz(1700);
+            stepper->setAcceleration(10000);
+            if(direction_sign(targetPosition->getNewVal() - currentPosition->getNewVal()) > 0)
+            {
+                stepper->move((motor_steps_full * stepper_gear_ratio)/6);
+            }
+            else{
+                stepper->move(-(motor_steps_full * stepper_gear_ratio)/6);
+            }
+            while(stepper->isRunning()){
+                //do nothing
+                //just block the time when stepper is moving
+            }
+            // stepper->forceStop();
+            // decrease the accel and speed back to normmal
+            stepper->setSpeedInHz(1600);
+            stepper->setAcceleration(1200);
+        }
+        
         stepper->moveTo(stepper_steps_target);
 
         return (true);
@@ -276,20 +333,21 @@ struct Standing_Desk : Service::WindowCovering{
         Serial.print(currentPosition->getNewVal());
         // Serial.print(" State: ");
         // Serial.print(positionState->getNewVal());
-        // Serial.print(" Direction pin output: ");
-        // Serial.print(digitalRead(stepper->getDirectionPin()));
+        Serial.print(" Direction pin output: ");
+        Serial.print(digitalRead(stepper->getDirectionPin()));
+        Serial.print(" To Go direction: ");
+        Serial.print(direction_sign(targetPosition->getNewVal() - currentPosition->getNewVal()));
         // Serial.print(" enablePIN state: ");
         // Serial.print(digitalRead(enablePinStepper));
         // Serial.print("  Intrpt Triggered ? : ");
         // Serial.print(intr_test);
-        Serial.print(" vibration detected count: ");
-        Serial.print(obstacle_detection);
+        // Serial.print(" vibration detected count: ");
+        // Serial.print(obstacle_detection);
         // Serial.print(" Button States - ");
         // Serial.print(up_btn);
         // Serial.print(down_btn);
         Serial.print(" | Homing Sensor: ");
         Serial.println(digitalRead(homing_Sensor));
-
 
         //stepper is having issues / missing steps, jittering, etc, stop the motor immediately 
         // if(digitalRead(vibration_sensor) == 1){
@@ -297,7 +355,9 @@ struct Standing_Desk : Service::WindowCovering{
         //     obstacleDetected->setVal(1);
         //     targetPosition->setVal(table_current_pos); //update the position visually in Home App
         // }
-        if(obstacle_detection > obstacle_detection_sensitivity)
+        
+        //when obstable avoidance interrupt triggers
+        if(obstacle_avoidance_triggered)
         {
             Serial.println("OBSTACLE (VIBRATION IN TABLE) DETECTED!!!!!!");
             Serial.print("Vibration sensor op: ");
@@ -306,7 +366,18 @@ struct Standing_Desk : Service::WindowCovering{
             obstacleDetected->setVal(1);
             targetPosition->setVal(table_current_pos); //update the position visually in Home App
             obstacle_detection = 0;
+            obstacle_avoidance_triggered = LOW;
             delay(1000); //10sec delay for debugging 
+        }
+        
+        if(digitalRead(enablePinStepper)){
+            obstacle_detection = 0;
+        }
+        else{
+            //get the direction
+            //0 - travelling down
+            //1 - travelling up
+            previous_direction = digitalRead(stepper->getDirectionPin());
         }
 
         //homing sensor trigger
@@ -321,13 +392,14 @@ struct Standing_Desk : Service::WindowCovering{
             // do{
             //     stepper->move(1);
             // }while(!digitalRead(homing_Sensor));
-            stepper->move(motor_steps_full);
+            // stepper->move(motor_steps_full);
             // Serial.println(stepper->getEnablePinHighActive);
             delay(1000);
             stepper->forceStop();
             currentPosition->setVal(0);
             targetPosition->setVal(0);
             stepper->setCurrentPosition(0);
+            // stepper->move(motor_steps_full); //just for test --- works
             home_state = LOW;
             
             delay(10000); //10sec delay to debug
@@ -365,4 +437,9 @@ bool buttonPressed(int button, short index)
     }
 
     return(res_state);
+}
+
+//this will return if the
+bool direction_sign(signed long value){
+    return(value > 0);
 }
