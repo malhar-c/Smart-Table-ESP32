@@ -24,3 +24,5 @@ UNSOLVED!!!
 Potential solutions:
 1. only activate the interrupt when the motor is active (will still be an issue when the motor is turning)
 2. IDK what
+
+Testing new setup
