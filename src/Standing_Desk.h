@@ -384,22 +384,18 @@ struct Standing_Desk : Service::WindowCovering{
         if(home_state == 1)
         {
             Serial.println(" HOMING SENSOR TRIGGERED !!!!!saved from a crash you moron!!!!!!");
-            // Serial.print(" HOME STATE Varible (interrupt): ");
-            // Serial.println(home_state);
+
             //homeing triggred... i.e. table is at minimum height
             stepper->forceStop(); //need this for the reverse action to work
-            delay(500);
-            // do{
-            //     stepper->move(1);
-            // }while(!digitalRead(homing_Sensor));
-            // stepper->move(motor_steps_full);
-            // Serial.println(stepper->getEnablePinHighActive);
-            delay(1000);
-            stepper->forceStop();
+            delay(100);
+            while(stepper->isRunning()){
+                //do nothing
+                //just block the time when stepper is moving
+            }
+            
             currentPosition->setVal(0);
             targetPosition->setVal(0);
             stepper->setCurrentPosition(0);
-            // stepper->move(motor_steps_full); //just for test --- works
             home_state = LOW;
             
             delay(10000); //10sec delay to debug
