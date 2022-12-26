@@ -54,6 +54,7 @@ void setup()
   LED_setup();
   setup_stepper_init();
   intrpt_setup();
+  // distance_sensor_setup();
 
   homeSpan.begin(Category::Bridges, "Smart Desk");
 

@@ -26,12 +26,15 @@
 //vibration sensor sensitivity ---> higher vlaue = lower sens
 #define obstacle_detection_sensitivity 10
 
+//Ultrasonic distance sensor config
+#define trigPin 32
+#define echoPin 35 //input only
 
 //manual push buttons config
 #define up_Button     27
 #define down_Button   25
 #define sit_Button    33
-#define stand_Button  32
+#define stand_Button  16
 
 #define manual_push_btn_count 4
 
@@ -184,6 +187,16 @@ void intrpt_setup()
     // attachInterrupt(digitalPinToInterrupt(stand_Button), ISR_stand, FALLING);
 }
 
+//Distance measurement configs 
+// void distance_sensor_setup()
+// {
+//     pinMode(trigPin, OUTPUT);
+//     pinMode(echoPin, INPUT);
+// }
+// // defines variables
+// long duration; // variable for the duration of sound wave travel
+// int distance; // variable for the distance measurement
+
 bool previous_direction = 0;
 
 long stepper_steps_target;
@@ -200,6 +213,7 @@ bool currentState[manual_push_btn_count];
 //function prototypes
 bool buttonPressed(int, short);
 bool direction_sign(signed long);
+void cal_distance();
 
 struct Standing_Desk : Service::WindowCovering{
 
@@ -327,27 +341,29 @@ struct Standing_Desk : Service::WindowCovering{
         }
 
         //debugggin
-        Serial.print("Target Position: ");
-        Serial.print(targetPosition->getNewVal());
-        Serial.print(" current position: ");
-        Serial.print(currentPosition->getNewVal());
-        // Serial.print(" State: ");
-        // Serial.print(positionState->getNewVal());
-        Serial.print(" Direction pin output: ");
-        Serial.print(digitalRead(stepper->getDirectionPin()));
-        Serial.print(" To Go direction: ");
-        Serial.print(direction_sign(targetPosition->getNewVal() - currentPosition->getNewVal()));
-        // Serial.print(" enablePIN state: ");
-        // Serial.print(digitalRead(enablePinStepper));
-        // Serial.print("  Intrpt Triggered ? : ");
-        // Serial.print(intr_test);
-        // Serial.print(" vibration detected count: ");
-        // Serial.print(obstacle_detection);
-        // Serial.print(" Button States - ");
-        // Serial.print(up_btn);
-        // Serial.print(down_btn);
-        Serial.print(" | Homing Sensor: ");
-        Serial.println(digitalRead(homing_Sensor));
+        // Serial.print("Target Position: ");
+        // Serial.print(targetPosition->getNewVal());
+        // Serial.print(" current position: ");
+        // Serial.print(currentPosition->getNewVal());
+        // // Serial.print(" State: ");
+        // // Serial.print(positionState->getNewVal());
+        // Serial.print(" Direction pin output: ");
+        // Serial.print(digitalRead(stepper->getDirectionPin()));
+        // Serial.print(" To Go direction: ");
+        // Serial.print(direction_sign(targetPosition->getNewVal() - currentPosition->getNewVal()));
+        // // Serial.print(" enablePIN state: ");
+        // // Serial.print(digitalRead(enablePinStepper));
+        // // Serial.print("  Intrpt Triggered ? : ");
+        // // Serial.print(intr_test);
+        // // Serial.print(" vibration detected count: ");
+        // // Serial.print(obstacle_detection);
+        // // Serial.print(" Button States - ");
+        // // Serial.print(up_btn);
+        // // Serial.print(down_btn);
+        // Serial.print(" | Homing Sensor: ");
+        // Serial.println(digitalRead(homing_Sensor));
+
+        // cal_distance();
 
         //stepper is having issues / missing steps, jittering, etc, stop the motor immediately 
         // if(digitalRead(vibration_sensor) == 1){
@@ -439,3 +455,22 @@ bool buttonPressed(int button, short index)
 bool direction_sign(signed long value){
     return(value > 0);
 }
+
+// void cal_distance()
+// {
+//     //measure the distance and return the value cms
+//     digitalWrite(trigPin, LOW);
+//     delayMicroseconds(2);
+//     // Sets the trigPin HIGH (ACTIVE) for 10 microseconds
+//     digitalWrite(trigPin, HIGH);
+//     delayMicroseconds(10);
+//     digitalWrite(trigPin, LOW);
+//     // Reads the echoPin, returns the sound wave travel time in microseconds
+//     duration = pulseIn(echoPin, HIGH);
+//     // Calculating the distance
+//     distance = duration * 0.034 / 2; // Speed of sound wave divided by 2 (go and back)
+//     // Displays the distance on the Serial Monitor
+//     Serial.print("Distance: ");
+//     Serial.print(distance);
+//     Serial.println(" cm");
+// }

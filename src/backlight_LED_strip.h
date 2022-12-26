@@ -3,7 +3,7 @@
 #define DATA_PIN    18
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
-#define NUM_LEDS    5
+#define NUM_LEDS    73 //74 //5
 CRGB leds[NUM_LEDS];
 
 #define BRIGHTNESS         255
@@ -18,6 +18,8 @@ int v;
 int h_smooth;
 int s_smooth;
 int v_smooth;
+
+int FastLED_fade_counter;
 
 void LED_setup() 
 {
@@ -74,41 +76,34 @@ struct table_backlight : Service::LightBulb {      // Addressable single-wire RG
 
   void loop()
   {
-    if(h_smooth < h){
-        h_smooth++;
-    }else if(h_smooth > h){
-        h_smooth--;
-    }else{
-        h_smooth = h;
-    }
-
-    if(s_smooth < s){
-        s_smooth++;
-    }else if(s_smooth > s){
-        s_smooth--;
-    }else{
-        s_smooth = s;
-    }
-
-    if(v_smooth < v){
-        v_smooth++;
-    }else if(v_smooth > v){
-        v_smooth--;
-    }else{
-        v_smooth = v;
-    }
 
     for (int i=0; i<NUM_LEDS; i++)
     {
-        leds[i].setHSV(h_smooth, s_smooth, v_smooth);
-        FastLED.show(); 
+        // leds[i].setHSV(h_smooth, s_smooth, v_smooth);
+        leds[i].setHSV(h, s, v);
     }
 
-    // Serial.print(h_smooth);
-    // Serial.print(" ");
-    // Serial.print(s_smooth);
-    // Serial.print(" ");
-    // Serial.println(v_smooth);
+    FastLED.show(); 
+
+    Serial.print(h);
+    Serial.print(" ");
+    Serial.print(s);
+    Serial.print(" ");
+    Serial.println(v);
     
   }
 };
+
+void  Scene_01_fade_up ()
+{
+
+  for ( int i = 0; i < NUM_LEDS; i++ )
+      {
+        leds[i] = CRGB::Orange; // Can be any colour
+        leds[i].maximizeBrightness(FastLED_fade_counter);  // 'FastLED_fade_counter' How high we want to fade up to 255 = maximum.
+      }
+
+      FastLED.show();
+      FastLED_fade_counter++ ;   // Increment
+
+}
