@@ -1,4 +1,201 @@
-struct Standing_Desk : Service::WindowCovering{
+#include "FastAccelStepper.h"
+#include <Preferences.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// ─── Stepper pins ────────────────────────────────────────────────────────────
+#define STEP_PIN        2
+#define DIR_PIN         4
+#define ENABLE_PIN      15
+
+// ─── Motor / desk geometry ───────────────────────────────────────────────────
+#define MOTOR_STEPS_FULL        400     // steps/rev in half-step mode
+#define STEPPER_GEAR_RATIO      19.2f
+#define TURNS_MAX_HEIGHT        29      // crank turns from home to max height
+#define STEPPER_MAX_STEPS       ((long)(MOTOR_STEPS_FULL * STEPPER_GEAR_RATIO * TURNS_MAX_HEIGHT))  // 221,760
+
+#define STEPPER_SPEED_HZ        1600
+#define STEPPER_ACCEL           1200
+#define SLACK_SPEED_HZ          1700
+#define SLACK_ACCEL             10000
+#define SLACK_STEPS             ((long)(MOTOR_STEPS_FULL * STEPPER_GEAR_RATIO / 6))
+
+// ─── Physical height bounds (tabletop to floor, cm) ──────────────────────────
+// Adjust these to match your desk's actual travel range
+#define DESK_HEIGHT_MIN_CM      62.0f
+#define DESK_HEIGHT_MAX_CM      127.0f
+
+// ─── Safety sensors ──────────────────────────────────────────────────────────
+#define LIMIT_SWITCH_PIN        23      // mechanical limit switch, INPUT_PULLUP
+#define VIBRATION_SENSOR_PIN    26      // obstruction / step-skip detection
+#define OBSTACLE_SENSITIVITY    10      // pulses before motor stop
+
+// ─── Buttons ─────────────────────────────────────────────────────────────────
+#define BTN_UP      27
+#define BTN_DOWN    25
+#define BTN_SIT     33
+#define BTN_STAND   32
+
+#define BTN_COUNT       4
+#define BTN_IDX_UP      0
+#define BTN_IDX_DOWN    1
+#define BTN_IDX_SIT     2
+#define BTN_IDX_STAND   3
+
+#define DEBOUNCE_MS         50      // ignore releases shorter than this (bounce filter)
+#define LONG_PRESS_MS       5000    // hold duration to save a memory position
+#define DISPLAY_SLEEP_MS    15000   // inactivity timeout before display turns off
+#define HOMING_HOLD_MS      5000    // hold both Up+Down to trigger auto-home
+
+// ─── OLED ─────────────────────────────────────────────────────────────────────
+#define OLED_ADDR       0x3C
+#define OLED_WIDTH      128
+#define OLED_HEIGHT     64
+#define OLED_RESET      -1
+
+// ─── NVS keys ────────────────────────────────────────────────────────────────
+#define NVS_NAMESPACE   "desk"
+#define NVS_KEY_POS     "steps"
+#define NVS_KEY_SIT     "sit_pos"
+#define NVS_KEY_STAND   "stand_pos"
+
+// ─── Globals ─────────────────────────────────────────────────────────────────
+FastAccelStepperEngine stepperEngine = FastAccelStepperEngine();
+FastAccelStepper *stepper = NULL;
+Adafruit_SSD1306 oled(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+Preferences prefs;
+
+volatile bool  limitSwitchTriggered = false;
+volatile int   vibrationCount       = 0;
+volatile bool  obstacleTriggered    = false;
+
+bool          previousBtnState[BTN_COUNT] = {};
+bool          currentBtnState[BTN_COUNT]  = {};
+unsigned long btnPressTime[BTN_COUNT]     = {};
+
+bool previousDirection = false;
+long stepsTarget       = 0;
+
+// ─── ISRs ─────────────────────────────────────────────────────────────────────
+void IRAM_ATTR ISR_LimitSwitch()
+{
+    if (!digitalRead(LIMIT_SWITCH_PIN) &&
+        !digitalRead(stepper->getDirectionPin()) &&
+        !digitalRead(ENABLE_PIN))
+    {
+        digitalWrite(ENABLE_PIN, HIGH);
+        limitSwitchTriggered = true;
+    }
+}
+
+void IRAM_ATTR ISR_Vibration()
+{
+    if (!digitalRead(ENABLE_PIN)) {
+        vibrationCount++;
+        if (vibrationCount > OBSTACLE_SENSITIVITY) {
+            obstacleTriggered = true;
+            digitalWrite(ENABLE_PIN, HIGH);
+        }
+    }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+float stepsToHeight(long steps)
+{
+    return DESK_HEIGHT_MIN_CM +
+           (float)steps / STEPPER_MAX_STEPS * (DESK_HEIGHT_MAX_CM - DESK_HEIGHT_MIN_CM);
+}
+
+long clampSteps(long s)
+{
+    if (s < 0) return 0;
+    if (s > STEPPER_MAX_STEPS) return STEPPER_MAX_STEPS;
+    return s;
+}
+
+bool directionSign(long delta) { return delta > 0; }
+
+void savePosition(long steps)
+{
+    prefs.begin(NVS_NAMESPACE, false);
+    prefs.putLong(NVS_KEY_POS, steps);
+    prefs.end();
+}
+
+// Returns true on button release (active-low INPUT_PULLUP).
+// Records press timestamp on the falling edge.
+bool btnJustReleased(int pin, int idx)
+{
+    previousBtnState[idx] = currentBtnState[idx];
+    currentBtnState[idx]  = !digitalRead(pin);
+
+    if (!previousBtnState[idx] && currentBtnState[idx]) {
+        btnPressTime[idx] = millis();
+    }
+    if (previousBtnState[idx] && !currentBtnState[idx]) {
+        if (millis() - btnPressTime[idx] < DEBOUNCE_MS) {
+            currentBtnState[idx] = true; // bounce — pretend still held
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool btnIsHeld(int pin, int idx)
+{
+    currentBtnState[idx] = !digitalRead(pin);
+    return currentBtnState[idx];
+}
+
+// ─── Init functions (called from main.cpp setup) ──────────────────────────────
+void initStepper()
+{
+    pinMode(LIMIT_SWITCH_PIN,     INPUT_PULLUP);
+    pinMode(VIBRATION_SENSOR_PIN, INPUT);
+    pinMode(BTN_UP,    INPUT_PULLUP);
+    pinMode(BTN_DOWN,  INPUT_PULLUP);
+    pinMode(BTN_SIT,   INPUT_PULLUP);
+    pinMode(BTN_STAND, INPUT_PULLUP);
+
+    Serial.println("[DESK] initStepper start");
+    Serial.printf("[DESK] LimitSwitch=%d  Vib=%d  UP=%d  DOWN=%d  SIT=%d  STAND=%d\n",
+        digitalRead(LIMIT_SWITCH_PIN),
+        digitalRead(VIBRATION_SENSOR_PIN),
+        digitalRead(BTN_UP), digitalRead(BTN_DOWN),
+        digitalRead(BTN_SIT), digitalRead(BTN_STAND));
+
+    stepperEngine.init();
+    stepper = stepperEngine.stepperConnectToPin(STEP_PIN);
+    if (stepper) {
+        stepper->setDirectionPin(DIR_PIN);
+        stepper->setEnablePin(ENABLE_PIN);
+        stepper->setAutoEnable(true);
+        stepper->setSpeedInHz(STEPPER_SPEED_HZ);
+        stepper->setAcceleration(STEPPER_ACCEL);
+        Serial.println("[DESK] Stepper connected OK");
+    } else {
+        Serial.println("[DESK] ERROR: stepperConnectToPin returned NULL");
+    }
+
+    attachInterrupt(digitalPinToInterrupt(LIMIT_SWITCH_PIN),     ISR_LimitSwitch, FALLING);
+    attachInterrupt(digitalPinToInterrupt(VIBRATION_SENSOR_PIN), ISR_Vibration,   RISING);
+    Serial.println("[DESK] initStepper done");
+}
+
+void initOled()
+{
+    if (!oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+        Serial.println("SSD1306 init failed");
+        return;
+    }
+    oled.clearDisplay();
+    oled.display();
+}
+
+// ─── HomeKit service ──────────────────────────────────────────────────────────
+struct Standing_Desk : Service::WindowCovering {
 
     SpanCharacteristic *targetPosition;
     SpanCharacteristic *currentPosition;

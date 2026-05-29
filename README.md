@@ -155,22 +155,25 @@ The display turns off automatically after **15 seconds** of inactivity to reduce
 
 ```
 ┌────────────────────────────┐
-│   HOMING                   │
-│   ...                      │
+│        HOMING              │  ← centered
+│         ...                │  ← animated dots cycle (. → .. → ...)
+│       110.4 cm             │  ← current height, centered, updates live
 └────────────────────────────┘
 ```
 
-Desk drives down until the limit switch triggers, then position resets to 0.
+Desk drives down until the limit switch triggers, then position resets to 0. Press either Up or Down (after fully releasing both) to abort homing at any time.
 
 ### Save countdown (hold Sit or Stand)
 
 ```
 ┌────────────────────────────┐
-│   SIT?  (or STD?)          │
+│   SAVE SIT                 │  ← or SAVE STAND, centered
 │                            │
 │  [████████░░░░░░░░░░░░░]   │  ← progress bar fills over 5 s
 └────────────────────────────┘
 ```
+
+Release before the bar fills = cancel. Hold to completion = position saved, "SAVED!" flashes briefly.
 
 ### Obstruction detected
 
